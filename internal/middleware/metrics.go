@@ -1,22 +1,22 @@
 package middleware
 
 import (
-	"github.com/gin-gonic/gin"
-)
+	"time"
 
-var (
-	requestCounter  = 0
-	requestDuration = 0.0
+	"github.com/gin-gonic/gin"
 )
 
 func Metrics() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Increment request counter
-		requestCounter++
+		start := time.Now()
 
 		c.Next()
 
-		// Record metrics (placeholder)
-		// In production, use Prometheus metrics
+		// Calculate request duration
+		duration := time.Since(start)
+
+		// Log metrics (in production, send to Prometheus)
+		// Example: prometheus.ObserveRequestDuration(c.Request.Method, c.Request.URL.Path, duration)
+		_ = duration // Avoid unused variable warning
 	}
 }
