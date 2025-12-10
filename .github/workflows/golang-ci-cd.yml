@@ -491,7 +491,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get Secrets from AWS Secrets Manager
+      - name: Get Secrets from AWS Secrets Manager and Create .env
         id: secrets
         run: |
           SECRET_JSON=$(aws secretsmanager get-secret-value \
@@ -499,9 +499,16 @@ jobs:
             --query SecretString \
             --output text)
           
-          # Export secrets as masked outputs
-          echo "::add-mask::$(echo $SECRET_JSON | jq -r '.DB_PASSWORD')"
-          echo "::add-mask::$(echo $SECRET_JSON | jq -r '.JWT_SECRET')"
+          # Convert JSON to .env format
+          echo "$SECRET_JSON" | jq -r 'to_entries | .[] | "\(.key)=\(.value)"' > .env
+          
+          # Mask all sensitive values in logs
+          for key in $(echo "$SECRET_JSON" | jq -r 'keys[]'); do
+            value=$(echo "$SECRET_JSON" | jq -r ".$key")
+            echo "::add-mask::$value"
+          done
+          
+          echo "✅ .env file created with $(wc -l < .env) environment variables"
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -556,7 +563,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get Secrets from AWS Secrets Manager
+      - name: Get Secrets from AWS Secrets Manager and Create .env
         id: secrets
         run: |
           SECRET_JSON=$(aws secretsmanager get-secret-value \
@@ -564,11 +571,16 @@ jobs:
             --query SecretString \
             --output text)
           
-          # Mask sensitive values in logs
-          echo "::add-mask::$(echo $SECRET_JSON | jq -r '.DB_PASSWORD')"
-          echo "::add-mask::$(echo $SECRET_JSON | jq -r '.JWT_SECRET')"
-          echo "::add-mask::$(echo $SECRET_JSON | jq -r '.JWT_REFRESH_SECRET')"
-          echo "::add-mask::$(echo $SECRET_JSON | jq -r '.REDIS_PASSWORD')"
+          # Convert JSON to .env format
+          echo "$SECRET_JSON" | jq -r 'to_entries | .[] | "\(.key)=\(.value)"' > .env
+          
+          # Mask all sensitive values in logs
+          for key in $(echo "$SECRET_JSON" | jq -r 'keys[]'); do
+            value=$(echo "$SECRET_JSON" | jq -r ".$key")
+            echo "::add-mask::$value"
+          done
+          
+          echo "✅ .env file created with $(wc -l < .env) environment variables"
 
       - name: Login to Amazon ECR
         id: login-ecr
