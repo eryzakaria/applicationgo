@@ -1,0 +1,200 @@
+# Staging Environment Overrides
+# Lower resource allocation for cost optimization
+
+replicaCount: 2
+
+image:
+  pullPolicy: Always  # Always pull latest for staging
+
+# ============================================
+# Resource Limits (Reduced for Staging)
+# ============================================
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# ============================================
+# Autoscaling (Reduced for Staging)
+# ============================================
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# ============================================
+# Pod Disruption Budget
+# ============================================
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# ============================================
+# Ingress Configuration
+# ============================================
+ingress:
+  enabled: true
+  className: "kong"
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/preserve-host: "true"
+    konghq.com/protocols: "https"
+    konghq.com/plugins: rate-limiting, cors
+    rate-limiting.config.minute: "500"  # Lower rate limit for staging
+  hosts:
+    - host: staging.suitemedia.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: staging-suitemedia-tls
+      hosts:
+        - staging.suitemedia.com
+
+# ============================================
+# Environment Variables
+# ============================================
+env:
+  - name: NODE_ENV
+    value: "staging"
+  - name: PORT
+    value: "3000"
+  - name: LOG_LEVEL
+    value: "debug"
+  - name: METRICS_ENABLED
+    value: "true"
+  - name: DEBUG
+    value: "true"
+
+# ============================================
+# Configuration
+# ============================================
+config:
+  app:
+    name: "SuiteMedia-Staging"
+    environment: "staging"
+    logLevel: "debug"
+    maxRequestSize: "10mb"
+  
+  database:
+    pool:
+      min: 1
+      max: 5
+    connectionTimeout: 30000
+  
+  redis:
+    keyPrefix: "staging:suitemedia:"
+    ttl: 1800
+  
+  rateLimit:
+    windowMs: 60000
+    max: 500
+
+# ============================================
+# External Secrets (Staging)
+# ============================================
+# External Secrets - Single Secret Key for All Config
+# ============================================
+externalSecrets:
+  enabled: true
+  refreshInterval: 30m
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: SecretStore
+  target:
+    name: suitemedia-secrets
+    creationPolicy: Owner
+  data:
+    # All secrets from single AWS Secrets Manager key: staging/suitemedia/app
+    - secretKey: DB_HOST
+      remoteRef:
+        key: staging/suitemedia/app
+        property: DB_HOST
+    - secretKey: DB_PORT
+      remoteRef:
+        key: staging/suitemedia/app
+        property: DB_PORT
+    - secretKey: DB_USER
+      remoteRef:
+        key: staging/suitemedia/app
+        property: DB_USER
+    - secretKey: DB_PASSWORD
+      remoteRef:
+        key: staging/suitemedia/app
+        property: DB_PASSWORD
+    - secretKey: DB_NAME
+      remoteRef:
+        key: staging/suitemedia/app
+        property: DB_NAME
+    - secretKey: DB_SSLMODE
+      remoteRef:
+        key: staging/suitemedia/app
+        property: DB_SSLMODE
+    - secretKey: REDIS_HOST
+      remoteRef:
+        key: staging/suitemedia/app
+        property: REDIS_HOST
+    - secretKey: REDIS_PORT
+      remoteRef:
+        key: staging/suitemedia/app
+        property: REDIS_PORT
+    - secretKey: REDIS_PASSWORD
+      remoteRef:
+        key: staging/suitemedia/app
+        property: REDIS_PASSWORD
+    - secretKey: JWT_SECRET
+      remoteRef:
+        key: staging/suitemedia/app
+        property: JWT_SECRET
+    - secretKey: JWT_REFRESH_SECRET
+      remoteRef:
+        key: staging/suitemedia/app
+        property: JWT_REFRESH_SECRET
+    - secretKey: JWT_EXPIRATION_HOURS
+      remoteRef:
+        key: staging/suitemedia/app
+        property: JWT_EXPIRATION_HOURS
+    - secretKey: JWT_REFRESH_EXPIRATION_DAYS
+      remoteRef:
+        key: staging/suitemedia/app
+        property: JWT_REFRESH_EXPIRATION_DAYS
+
+# ============================================
+# Node Selector (Staging nodes - spot instances)
+# ============================================
+nodeSelector:
+  workload-type: staging
+  capacity-type: spot  # Use spot instances for cost savings
+
+tolerations:
+  - key: "workload-type"
+    operator: "Equal"
+    value: "staging"
+    effect: "NoSchedule"
+  - key: "capacity-type"
+    operator: "Equal"
+    value: "spot"
+    effect: "NoSchedule"
+
+# ============================================
+# Monitoring (Reduced)
+# ============================================
+serviceMonitor:
+  enabled: true
+  interval: 60s  # Less frequent scraping
+  scrapeTimeout: 10s
+
+# ============================================
+# Backup (Less frequent)
+# ============================================
+backup:
+  enabled: true
+  schedule: "0 3 * * 0"  # Weekly on Sunday at 3 AM
+  velero:
+    enabled: true
+    ttl: 168h  # 7 days

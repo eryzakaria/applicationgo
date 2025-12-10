@@ -1,0 +1,449 @@
+# Default values for suitemedia application
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# ============================================
+# Image Configuration
+# ============================================
+image:
+  repository: ""  # Will be set by CI/CD: <account-id>.dkr.ecr.us-east-1.amazonaws.com/suitemedia-app
+  tag: ""  # Will be set by CI/CD: commit SHA or version tag
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# ============================================
+# Deployment Configuration
+# ============================================
+replicaCount: 3
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ============================================
+# Service Account
+# ============================================
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: ""  # IAM role for IRSA (IAM Roles for Service Accounts)
+  name: ""
+
+# ============================================
+# Pod Security & Annotations
+# ============================================
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3000"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# ============================================
+# Service Configuration
+# ============================================
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+  protocol: TCP
+  annotations: {}
+
+# ============================================
+# Ingress Configuration (Kong)
+# ============================================
+ingress:
+  enabled: true
+  className: "kong"
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/preserve-host: "true"
+    konghq.com/protocols: "https"
+    konghq.com/https-redirect-status-code: "301"
+    # Rate limiting
+    konghq.com/plugins: rate-limiting, cors, jwt-auth
+    # Kong plugins configuration
+    rate-limiting.config.minute: "1000"
+    rate-limiting.config.policy: "local"
+    cors.config.origins: "*"
+    cors.config.methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    cors.config.headers: "Accept,Authorization,Content-Type,X-Request-Id"
+    cors.config.credentials: "true"
+    cors.config.max_age: "3600"
+  hosts:
+    - host: suitemedia.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: suitemedia-tls
+      hosts:
+        - suitemedia.com
+
+# ============================================
+# Resource Limits & Requests
+# ============================================
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# ============================================
+# Horizontal Pod Autoscaling
+# ============================================
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 4
+          periodSeconds: 30
+      selectPolicy: Max
+
+# ============================================
+# Vertical Pod Autoscaling (Optional)
+# ============================================
+verticalPodAutoscaling:
+  enabled: false
+  updateMode: "Auto"  # Off, Initial, Recreate, Auto
+  minAllowed:
+    cpu: 100m
+    memory: 128Mi
+  maxAllowed:
+    cpu: 2000m
+    memory: 2Gi
+
+# ============================================
+# Pod Disruption Budget
+# ============================================
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+  # maxUnavailable: 1
+
+# ============================================
+# Node Selector & Affinity
+# ============================================
+nodeSelector:
+  workload-type: application
+
+tolerations:
+  - key: "workload-type"
+    operator: "Equal"
+    value: "application"
+    effect: "NoSchedule"
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - suitemedia
+          topologyKey: kubernetes.io/hostname
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - t3.large
+                - t3.xlarge
+
+# ============================================
+# Topology Spread Constraints
+# ============================================
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: suitemedia
+
+# ============================================
+# Environment Variables
+# ============================================
+env:
+  - name: NODE_ENV
+    value: "production"
+  - name: PORT
+    value: "3000"
+  - name: LOG_LEVEL
+    value: "info"
+  - name: METRICS_ENABLED
+    value: "true"
+
+# Environment variables from ConfigMap
+envFrom:
+  - configMapRef:
+      name: suitemedia-config
+  - secretRef:
+      name: suitemedia-secrets
+
+# ============================================
+# Application Configuration (ConfigMap)
+# ============================================
+config:
+  app:
+    name: "SuiteMedia"
+    environment: "production"
+    logLevel: "info"
+    maxRequestSize: "10mb"
+  
+  database:
+    pool:
+      min: 2
+      max: 10
+    connectionTimeout: 30000
+    idleTimeout: 10000
+  
+  redis:
+    keyPrefix: "suitemedia:"
+    ttl: 3600
+  
+  s3:
+    region: "us-east-1"
+    signedUrlExpiry: 3600
+  
+  cors:
+    origins:
+      - "https://suitemedia.com"
+      - "https://www.suitemedia.com"
+    credentials: true
+  
+  rateLimit:
+    windowMs: 60000
+    max: 1000
+
+# ============================================
+# Secrets (External Secrets Operator)
+# ============================================
+externalSecrets:
+  enabled: true
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: SecretStore
+  target:
+    name: suitemedia-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: DATABASE_URL
+      remoteRef:
+        key: suitemedia/production/database
+        property: url
+    - secretKey: DATABASE_PASSWORD
+      remoteRef:
+        key: suitemedia/production/database
+        property: password
+    - secretKey: REDIS_URL
+      remoteRef:
+        key: suitemedia/production/redis
+        property: url
+    - secretKey: JWT_SECRET
+      remoteRef:
+        key: suitemedia/production/auth
+        property: jwt_secret
+    - secretKey: AWS_ACCESS_KEY_ID
+      remoteRef:
+        key: suitemedia/production/aws
+        property: access_key_id
+    - secretKey: AWS_SECRET_ACCESS_KEY
+      remoteRef:
+        key: suitemedia/production/aws
+        property: secret_access_key
+
+# ============================================
+# Health Checks
+# ============================================
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+    scheme: HTTP
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 3000
+    scheme: HTTP
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  successThreshold: 1
+  failureThreshold: 3
+
+startupProbe:
+  httpGet:
+    path: /health
+    port: 3000
+    scheme: HTTP
+  initialDelaySeconds: 0
+  periodSeconds: 5
+  timeoutSeconds: 3
+  successThreshold: 1
+  failureThreshold: 30
+
+# ============================================
+# Lifecycle Hooks
+# ============================================
+lifecycle:
+  preStop:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - sleep 15
+
+# ============================================
+# Volume Mounts
+# ============================================
+volumeMounts:
+  - name: tmp
+    mountPath: /tmp
+  - name: cache
+    mountPath: /app/.cache
+
+volumes:
+  - name: tmp
+    emptyDir: {}
+  - name: cache
+    emptyDir: {}
+
+# ============================================
+# Service Monitor (Prometheus Operator)
+# ============================================
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  labels:
+    release: prometheus
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+
+# ============================================
+# Network Policy
+# ============================================
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: kong
+        - podSelector:
+            matchLabels:
+              app: kong
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432  # PostgreSQL
+        - protocol: TCP
+          port: 6379  # Redis
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443  # HTTPS
+        - protocol: TCP
+          port: 53   # DNS
+        - protocol: UDP
+          port: 53   # DNS
+
+# ============================================
+# Priority Class
+# ============================================
+priorityClassName: "high-priority"
+
+# ============================================
+# Monitoring & Logging
+# ============================================
+monitoring:
+  enabled: true
+  grafana:
+    dashboardName: "suitemedia-dashboard"
+  
+logging:
+  enabled: true
+  level: info
+  format: json
+  filebeat:
+    enabled: true
+
+# ============================================
+# Backup Configuration
+# ============================================
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  velero:
+    enabled: true
+    ttl: 720h  # 30 days
+
+# ============================================
+# Testing
+# ============================================
+tests:
+  enabled: true
+  image:
+    repository: curlimages/curl
+    tag: latest

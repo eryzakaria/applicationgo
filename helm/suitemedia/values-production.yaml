@@ -1,0 +1,487 @@
+# Production Environment Overrides
+# Optimized for high availability and performance
+
+replicaCount: 6
+
+image:
+  pullPolicy: IfNotPresent
+
+# ============================================
+# Service Account with IAM Role
+# ============================================
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/suitemedia-production-role"
+  name: "suitemedia-production"
+
+# ============================================
+# Resource Limits (Production-grade)
+# ============================================
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# ============================================
+# Autoscaling (Production capacity)
+# ============================================
+autoscaling:
+  enabled: true
+  minReplicas: 6
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # 5 minutes stabilization
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 4
+          periodSeconds: 30
+      selectPolicy: Max
+
+# ============================================
+# Vertical Pod Autoscaling
+# ============================================
+verticalPodAutoscaling:
+  enabled: true
+  updateMode: "Auto"
+  minAllowed:
+    cpu: 250m
+    memory: 256Mi
+  maxAllowed:
+    cpu: 2000m
+    memory: 2Gi
+
+# ============================================
+# Pod Disruption Budget (High Availability)
+# ============================================
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 4  # Always keep 4 pods available
+
+# ============================================
+# Ingress Configuration (Production)
+# ============================================
+ingress:
+  enabled: true
+  className: "kong"
+  annotations:
+    konghq.com/strip-path: "false"
+    konghq.com/preserve-host: "true"
+    konghq.com/protocols: "https"
+    konghq.com/https-redirect-status-code: "301"
+    konghq.com/plugins: rate-limiting, cors, jwt-auth, request-transformer, response-transformer
+    # Production rate limiting
+    rate-limiting.config.minute: "1000"
+    rate-limiting.config.hour: "50000"
+    rate-limiting.config.policy: "redis"
+    rate-limiting.config.redis_host: "redis.production.svc.cluster.local"
+    # CORS configuration
+    cors.config.origins: "https://suitemedia.com,https://www.suitemedia.com,https://app.suitemedia.com"
+    cors.config.methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    cors.config.headers: "Accept,Authorization,Content-Type,X-Request-Id,X-Correlation-Id"
+    cors.config.credentials: "true"
+    # SSL/TLS
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: suitemedia.com
+      paths:
+        - path: /
+          pathType: Prefix
+    - host: www.suitemedia.com
+      paths:
+        - path: /
+          pathType: Prefix
+    - host: app.suitemedia.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: suitemedia-tls
+      hosts:
+        - suitemedia.com
+        - www.suitemedia.com
+        - app.suitemedia.com
+
+# ============================================
+# Environment Variables (Production)
+# ============================================
+env:
+  - name: NODE_ENV
+    value: "production"
+  - name: PORT
+    value: "3000"
+  - name: LOG_LEVEL
+    value: "info"
+  - name: METRICS_ENABLED
+    value: "true"
+  - name: SENTRY_ENABLED
+    value: "true"
+  - name: SENTRY_ENVIRONMENT
+    value: "production"
+  - name: CACHE_ENABLED
+    value: "true"
+  - name: COMPRESSION_ENABLED
+    value: "true"
+
+# ============================================
+# Configuration (Production)
+# ============================================
+config:
+  app:
+    name: "SuiteMedia"
+    environment: "production"
+    logLevel: "info"
+    maxRequestSize: "10mb"
+    enableMetrics: true
+    enableTracing: true
+  
+  database:
+    pool:
+      min: 5
+      max: 20
+    connectionTimeout: 30000
+    idleTimeout: 10000
+    statementTimeout: 30000
+  
+  redis:
+    keyPrefix: "prod:suitemedia:"
+    ttl: 3600
+    cluster: true
+  
+  s3:
+    region: "us-east-1"
+    signedUrlExpiry: 3600
+    bucket: "suitemedia-production"
+  
+  cors:
+    origins:
+      - "https://suitemedia.com"
+      - "https://www.suitemedia.com"
+      - "https://app.suitemedia.com"
+    credentials: true
+    maxAge: 86400
+  
+  rateLimit:
+    windowMs: 60000
+    max: 1000
+    skipSuccessfulRequests: false
+  
+  security:
+    helmet: true
+    hsts: true
+    contentSecurityPolicy: true
+    rateLimitByIp: true
+
+# ============================================
+# External Secrets (Production) - Single Secret Key
+# ============================================
+externalSecrets:
+  enabled: true
+  refreshInterval: 1h
+  secretStoreRef:
+    name: aws-secrets-manager
+    kind: SecretStore
+  target:
+    name: suitemedia-secrets
+    creationPolicy: Owner
+  data:
+    # All secrets from single AWS Secrets Manager key: production/suitemedia/app
+    - secretKey: DB_HOST
+      remoteRef:
+        key: production/suitemedia/app
+        property: DB_HOST
+    - secretKey: DB_PORT
+      remoteRef:
+        key: production/suitemedia/app
+        property: DB_PORT
+    - secretKey: DB_USER
+      remoteRef:
+        key: production/suitemedia/app
+        property: DB_USER
+    - secretKey: DB_PASSWORD
+      remoteRef:
+        key: production/suitemedia/app
+        property: DB_PASSWORD
+    - secretKey: DB_NAME
+      remoteRef:
+        key: production/suitemedia/app
+        property: DB_NAME
+    - secretKey: DB_SSLMODE
+      remoteRef:
+        key: production/suitemedia/app
+        property: DB_SSLMODE
+    - secretKey: REDIS_HOST
+      remoteRef:
+        key: production/suitemedia/app
+        property: REDIS_HOST
+    - secretKey: REDIS_PORT
+      remoteRef:
+        key: production/suitemedia/app
+        property: REDIS_PORT
+    - secretKey: REDIS_PASSWORD
+      remoteRef:
+        key: production/suitemedia/app
+        property: REDIS_PASSWORD
+    - secretKey: JWT_SECRET
+      remoteRef:
+        key: production/suitemedia/app
+        property: JWT_SECRET
+    - secretKey: JWT_REFRESH_SECRET
+      remoteRef:
+        key: production/suitemedia/app
+        property: JWT_REFRESH_SECRET
+    - secretKey: JWT_EXPIRATION_HOURS
+      remoteRef:
+        key: production/suitemedia/app
+        property: JWT_EXPIRATION_HOURS
+    - secretKey: JWT_REFRESH_EXPIRATION_DAYS
+      remoteRef:
+        key: production/suitemedia/app
+        property: JWT_REFRESH_EXPIRATION_DAYS
+    - secretKey: CORS_ALLOWED_ORIGINS
+      remoteRef:
+        key: production/suitemedia/app
+        property: CORS_ALLOWED_ORIGINS
+
+# ============================================
+# Node Selector (Production - On-Demand)
+# ============================================
+nodeSelector:
+  workload-type: application
+  capacity-type: on-demand  # Use on-demand instances for production stability
+
+tolerations:
+  - key: "workload-type"
+    operator: "Equal"
+    value: "application"
+    effect: "NoSchedule"
+
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:  # Hard requirement
+      - labelSelector:
+          matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values:
+                - suitemedia
+        topologyKey: kubernetes.io/hostname
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - suitemedia
+          topologyKey: topology.kubernetes.io/zone
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: capacity-type
+              operator: In
+              values:
+                - on-demand
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node.kubernetes.io/instance-type
+              operator: In
+              values:
+                - t3.xlarge
+                - t3.2xlarge
+
+# ============================================
+# Health Checks (Production - More Aggressive)
+# ============================================
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+    scheme: HTTP
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 3000
+    scheme: HTTP
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  successThreshold: 1
+  failureThreshold: 2  # Fail faster in production
+
+startupProbe:
+  httpGet:
+    path: /health
+    port: 3000
+    scheme: HTTP
+  initialDelaySeconds: 0
+  periodSeconds: 5
+  timeoutSeconds: 3
+  successThreshold: 1
+  failureThreshold: 30
+
+# ============================================
+# Lifecycle Hooks (Graceful Shutdown)
+# ============================================
+lifecycle:
+  preStop:
+    exec:
+      command:
+        - /bin/sh
+        - -c
+        - sleep 20  # Longer grace period for production
+
+# ============================================
+# Service Monitor (Production)
+# ============================================
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  labels:
+    release: prometheus
+    environment: production
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+
+# ============================================
+# Network Policy (Strict Production)
+# ============================================
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: kong
+        - podSelector:
+            matchLabels:
+              app: kong
+      ports:
+        - protocol: TCP
+          port: 3000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    # Database access
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: data
+      ports:
+        - protocol: TCP
+          port: 5432  # Aurora PostgreSQL
+    # Redis access
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: data
+      ports:
+        - protocol: TCP
+          port: 6379  # Redis
+    # AWS Services (S3, Secrets Manager, etc.)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443  # HTTPS
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+
+# ============================================
+# Priority Class (High Priority)
+# ============================================
+priorityClassName: "high-priority"
+
+# ============================================
+# Monitoring & Logging (Production)
+# ============================================
+monitoring:
+  enabled: true
+  grafana:
+    dashboardName: "suitemedia-production"
+    alertsEnabled: true
+  prometheus:
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency detected"
+  
+logging:
+  enabled: true
+  level: info
+  format: json
+  filebeat:
+    enabled: true
+    output: elasticsearch
+
+# ============================================
+# Backup Configuration (Production)
+# ============================================
+backup:
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  velero:
+    enabled: true
+    ttl: 720h  # 30 days
+    snapshotVolumes: true
+    includeClusterResources: true
