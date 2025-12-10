@@ -160,14 +160,9 @@ podDisruptionBudget:
 # ============================================
 # Node Selector & Affinity
 # ============================================
-nodeSelector:
-  workload-type: application
+nodeSelector: {}
 
-tolerations:
-  - key: "workload-type"
-    operator: "Equal"
-    value: "application"
-    effect: "NoSchedule"
+tolerations: []
 
 affinity:
   podAntiAffinity:

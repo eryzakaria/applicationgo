@@ -1,0 +1,79 @@
+replicaCount: 1
+
+image:
+  repository: suitemedia-app
+  tag: local
+  pullPolicy: Never
+
+service:
+  type: NodePort
+  port: 3000
+  nodePort: 30000
+
+ingress:
+  enabled: false
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+
+env:
+  - name: APP_ENV
+    value: "local"
+  - name: SERVER_PORT
+    value: "3000"
+  - name: DB_HOST
+    value: "postgresql.local.svc.cluster.local"
+  - name: DB_PORT
+    value: "5432"
+  - name: DB_USER
+    value: "suitemedia_user"
+  - name: DB_PASSWORD
+    value: "local_password"
+  - name: DB_NAME
+    value: "suitemedia_db"
+  - name: DB_SSLMODE
+    value: "disable"
+  - name: REDIS_HOST
+    value: "redis-master.local.svc.cluster.local"
+  - name: REDIS_PORT
+    value: "6379"
+  - name: REDIS_PASSWORD
+    value: ""
+  - name: JWT_SECRET
+    value: "local-jwt-secret-key-for-testing"
+  - name: JWT_REFRESH_SECRET
+    value: "local-refresh-secret-key-for-testing"
+  - name: CORS_ALLOWED_ORIGINS
+    value: "http://localhost:3000,http://localhost:8080"
+
+externalSecrets:
+  enabled: false
+
+serviceMonitor:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+
+verticalPodAutoscaler:
+  enabled: false
+
+priorityClassName: ""
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+topologySpreadConstraints: []
+
+envFrom: []
